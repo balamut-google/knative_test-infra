@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM debian:bullseye-20230522-slim AS base
+FROM debian:bookworm-20250317-slim AS base
 
 # Pinned versions of stuff we pull in
 ARG CLOUD_SDK_VERSION=405.0.0
 ARG KUBECTL_VERSION=v1.24.4
-ARG DOCKER_VERSION=5:20.10.17~3-0~debian-bullseye
+ARG DOCKER_VERSION=5:28.0.4-1~debian.12~bookworm
 ARG MAVEN_VERSION=3.8.4
-ARG JAVA_VERSION=16
+ARG JAVA_VERSION=17
 ARG PROTOC_VERSION=3.17.0
 ARG TFENV_VERSION=v2.2.3
 ARG KOPS_VERSION=v1.25.0
@@ -64,7 +64,7 @@ RUN apt-get update -qqy && apt-get install -qqy \
         net-tools \
         gnuplot
 
-RUN pip3 install -U crcmod==1.7
+RUN apt-get install python3-crcmod
 RUN curl -fsSLO https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz
 RUN tar xzf google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz -C /
 RUN rm google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz
@@ -127,14 +127,14 @@ RUN mkdir /docker-graph
 # BEGIN: JAVA SETUP (This is for kafka broker)
 #
 
-RUN curl -fsSL https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | gpg --dearmor -o /usr/share/keyrings/adoptopenjdk-archive-keyring.gpg && \
+RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor -o /usr/share/keyrings/adoptium-keyring.gpg && \
     echo \
-    "deb [signed-by=/usr/share/keyrings/adoptopenjdk-archive-keyring.gpg] https://adoptopenjdk.jfrog.io/adoptopenjdk/deb \
-    $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/adoptopenjdk.list
+    "deb [signed-by=/usr/share/keyrings/adoptium-keyring.gpg] https://packages.adoptium.net/artifactory/deb \
+    $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/adoptium.list
 RUN apt-get update -qqy && \
-    apt-get install -qqy adoptopenjdk-${JAVA_VERSION}-hotspot && \
+    apt-get install -qqy temurin-${JAVA_VERSION}-jdk && \
     rm -rf /var/lib/apt/lists/*
-ENV JAVA_HOME=/usr/lib/jvm/adoptopenjdk-${JAVA_VERSION}-hotspot-amd64
+ENV JAVA_HOME=/usr/lib/jvm/temurin-${JAVA_VERSION}-jdk-amd64
 
 ENV MAVEN_HOME=/usr/local/maven
 ENV M2_HOME=$MAVEN_HOME
@@ -220,7 +220,7 @@ RUN git clone https://github.com/kubernetes/kops /tmp/kops && cd /tmp/kops/tests
     go install .
 
 ############################################################
-FROM rust:1.69 AS external-rust-gets
+FROM rust:1.81 AS external-rust-gets
 
 ARG CODESIGN_VERSION=cb1e430a96f7d3d38af663a553b0e3e15a813d45
 # change this when a new version with https://github.com/indygreg/apple-platform-rs/pull/20 is cut
@@ -235,6 +235,8 @@ COPY --from=external-go-gets /go/bin/* /go/bin/
 COPY --from=external-go-latest /golang.version /golang-latest.version
 COPY --from=external-go-previous /golang.version /golang-previous.version
 
+# Install mandatory GVM dependencies (hexdump)
+RUN apt-get -qqy update  && apt-get install -qqy --no-install-recommends bsdmainutils
 # Install go using https://github.com/moovweb/gvm
 # GVM_NO_UPDATE_PROFILE=true means do not alter /root/.bashrc to automatically source gvm config, so when not using runner.sh, image works normally
 # Install the tool:
